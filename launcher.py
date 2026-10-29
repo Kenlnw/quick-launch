@@ -17,6 +17,25 @@ CONFIG_FILE = Path.home() / ".quicklaunch_config.json"
 SYNC_FILE   = Path.home() / ".quicklaunch_sync"
 PAGE_SIZE   = 5
 
+# Short forms, expanded to the full command before it runs
+COMMAND_ALIASES = {
+    ":t":   ":terminal",
+    ":s":   ":search",
+    ":r":   ":rename",
+    ":mf":  ":create file",
+    ":md":  ":create folder",
+    ":of":  ":createop file",
+    ":od":  ":createop folder",
+    ":dup": ":duplicate",
+    ":del": ":delete",
+    ":c":   ":copy",
+    ":x":   ":cut",
+    ":v":   ":paste",
+    ":sn":  ":snippet",
+    ":h":   ":help",
+    ":?":   ":help",
+}
+
 DEFAULT_CONFIG = {
     "snippets": {
         "~":         str(Path.home()),
@@ -159,7 +178,15 @@ def list_entries(directory: Path):
 def open_path(path: Path):
     p = str(path)
     if IS_WINDOWS:
-        os.startfile(p)
+        if not path.exists():
+            raise FileNotFoundError(p)
+        # Open via a console-less helper: apps like VS Code attach to the
+        # console of whoever launched them and print their logs over our screen
+        subprocess.Popen(
+            [sys.executable, "-I", "-c", "import os, sys; os.startfile(sys.argv[1])", p],
+            creationflags=subprocess.DETACHED_PROCESS,
+            stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+        )
     elif platform.system() == "Darwin":
         subprocess.Popen(["open", p])
     else:
@@ -387,33 +414,39 @@ def render_snippets_editor(config: dict):
     print(f"\n  {GRAY}[a] add  [d] delete  [b] back{RESET}\n")
     print(f"  {CYAN}>{RESET} ", end="", flush=True)
 
+def expand_alias(query: str) -> str:
+    """Turn ':mf notes.txt' into ':create file notes.txt'; full commands pass through."""
+    word, _, rest = query.partition(' ')
+    full = COMMAND_ALIASES.get(word.lower())
+    return f"{full} {rest}" if full else query
+
 def show_help(getch_fn):
     clear()
     print(LOGO)
     print(f"\n  {YELLOW}{BOLD}── Command Guide ──{RESET}\n")
     commands = [
-        (":terminal",                    "Open PowerShell at current folder"),
-        (":search [name]",               "Search folders by name (depth 5)"),
-        (":rename [1-5] [new name]",     "Rename a file or folder"),
-        (":create file/folder [name]",   "Create without opening"),
-        (":createop file/folder [name]", "Create then open/enter immediately"),
-        (":duplicate [1-5] [new name]",  "Duplicate a file or folder"),
-        (":delete [1-5]",                "Move to Recycle Bin (asks y/N first)"),
-        (":copy [1-5]",                  "Copy to clipboard"),
-        (":cut [1-5]",                   "Cut — use :paste to move"),
-        (":paste",                       "Paste clipboard into current folder"),
-        (":snippet [name]",              "Save current path as snippet"),
-        (":help",                        "Show this guide"),
-        ("",                             ""),
-        ("Tab",                          "Autocomplete snippet name"),
-        ("@",                            "Open snippet manager"),
-        ("ql  (in PowerShell)",          "Jump PowerShell to QuickLaunch location"),
+        (":terminal",                    ":t",       "Open PowerShell at current folder"),
+        (":search [name]",               ":s",       "Search folders by name (depth 5)"),
+        (":rename [1-5] [new name]",     ":r",       "Rename a file or folder"),
+        (":create file/folder [name]",   ":mf :md",  "Create without opening"),
+        (":createop file/folder [name]", ":of :od",  "Create then open/enter immediately"),
+        (":duplicate [1-5] [new name]",  ":dup",     "Duplicate a file or folder"),
+        (":delete [1-5]",                ":del",     "Move to Recycle Bin (asks y/N first)"),
+        (":copy [1-5]",                  ":c",       "Copy to clipboard"),
+        (":cut [1-5]",                   ":x",       "Cut — use :paste to move"),
+        (":paste",                       ":v",       "Paste clipboard into current folder"),
+        (":snippet [name]",              ":sn",      "Save current path as snippet"),
+        (":help",                        ":h :?",    "Show this guide"),
+        ("",                             "",         ""),
+        ("Tab",                          "",         "Autocomplete snippet name"),
+        ("@",                            "",         "Open snippet manager"),
+        ("ql  (in PowerShell)",          "",         "Jump PowerShell to QuickLaunch location"),
     ]
-    for cmd, desc in commands:
+    for cmd, alias, desc in commands:
         if cmd == "":
             print()
         else:
-            print(f"  {CYAN}{BOLD}{cmd:<35}{RESET}  {GRAY}{desc}{RESET}")
+            print(f"  {CYAN}{BOLD}{cmd:<30}{RESET}  {YELLOW}{alias:<8}{RESET}  {GRAY}{desc}{RESET}")
     print(f"\n  {GRAY}Press any key to continue...{RESET}")
     getch_fn()
 
@@ -579,6 +612,8 @@ def main():
 
         # ── Enter — all commands ─────────────────────────────────────────────
         if ch in ('\r', '\n'):
+            if query.startswith(':'):
+                query = expand_alias(query)
             q = query.strip().lower()
 
             # :terminal

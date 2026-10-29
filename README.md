@@ -52,22 +52,22 @@ QuickLaunch navigates live as you type. Press `Enter` to finish, then the number
 
 ## Commands
 
-Type these and press `Enter`. `[1-5]` means the item number shown on the current page.
+Type these and press `Enter`. `[1-5]` means the item number shown on the current page. Every command has a short form that works the same way, e.g. `:mf notes.txt` is `:create file notes.txt` and `:del 2` is `:delete 2`.
 
-| Command | Action |
-|---------|--------|
-| `:terminal` | Open PowerShell at the current folder |
-| `:search [name]` | Find folders whose name contains `name` (up to 5 levels deep, 50 results) |
-| `:rename [1-5] [new name]` | Rename a file or folder |
-| `:create file/folder [name]` | Create a file or folder without opening it |
-| `:createop file/folder [name]` | Create, then open the file / enter the folder |
-| `:duplicate [1-5] [new name]` | Make a copy next to the original |
-| `:delete [1-5]` | Move a file or folder to the Recycle Bin — asks first; press `y` to confirm, any other key cancels |
-| `:copy [1-5]` | Copy an item to QuickLaunch's clipboard |
-| `:cut [1-5]` | Mark an item to move — then navigate and `:paste` |
-| `:paste` | Paste the copied item, or move the cut item, into the current folder (never overwrites: adds `_copy`, `_copy2`, … if the name is taken) |
-| `:snippet [name]` | Save the current folder as a snippet |
-| `:help` | Show the command guide |
+| Command | Short | Action |
+|---------|-------|--------|
+| `:terminal` | `:t` | Open PowerShell at the current folder |
+| `:search [name]` | `:s` | Find folders whose name contains `name` (up to 5 levels deep, 50 results) |
+| `:rename [1-5] [new name]` | `:r` | Rename a file or folder |
+| `:create file/folder [name]` | `:mf` / `:md` | Create a file or folder without opening it |
+| `:createop file/folder [name]` | `:of` / `:od` | Create, then open the file / enter the folder |
+| `:duplicate [1-5] [new name]` | `:dup` | Make a copy next to the original |
+| `:delete [1-5]` | `:del` | Move a file or folder to the Recycle Bin — asks first; press `y` to confirm, any other key cancels |
+| `:copy [1-5]` | `:c` | Copy an item to QuickLaunch's clipboard |
+| `:cut [1-5]` | `:x` | Mark an item to move — then navigate and `:paste` |
+| `:paste` | `:v` | Paste the copied item, or move the cut item, into the current folder (never overwrites: adds `_copy`, `_copy2`, … if the name is taken) |
+| `:snippet [name]` | `:sn` | Save the current folder as a snippet |
+| `:help` | `:h` or `:?` | Show the command guide |
 
 ---
 
