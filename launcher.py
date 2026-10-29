@@ -165,7 +165,8 @@ def open_path(path: Path):
     else:
         subprocess.Popen(["xdg-open", p])
 
-def resolve_input(text: str, config: dict) -> Path | None:
+def resolve_input(text: str, config: dict, relative_to: Path) -> Path | None:
+    """Resolve typed text: snippet[/sub], /sub (inside relative_to), relative or absolute path."""
     text = text.strip()
     if not text:
         return None
@@ -176,8 +177,13 @@ def resolve_input(text: str, config: dict) -> Path | None:
         base = Path(snippets[first])
         rest = "/".join(parts[1:])
         path = base / rest if rest else base
+    elif text[0] in "/\\":
+        # A leading slash means "inside the folder you're in", e.g. after a snippet jump
+        path = relative_to / text.lstrip("/\\")
     else:
         path = Path(text.replace("\\", os.sep)).expanduser()
+        if not path.is_absolute():
+            path = relative_to / path
     return path if path.exists() else None
 
 # ── File operations ───────────────────────────────────────────────────────────
@@ -221,8 +227,37 @@ def duplicate_entry(path: Path, new_name: str) -> str:
     except Exception as e:
         return f"Error: {e}"
 
+def _recycle(path: Path) -> bool:
+    """Move a file or folder to the Windows Recycle Bin (SHFileOperationW)."""
+    from ctypes import wintypes
+
+    class SHFILEOPSTRUCTW(ctypes.Structure):
+        _fields_ = [
+            ("hwnd", wintypes.HWND),
+            ("wFunc", wintypes.UINT),
+            ("pFrom", wintypes.LPCWSTR),
+            ("pTo", wintypes.LPCWSTR),
+            ("fFlags", ctypes.c_ushort),
+            ("fAnyOperationsAborted", wintypes.BOOL),
+            ("hNameMappings", ctypes.c_void_p),
+            ("lpszProgressTitle", wintypes.LPCWSTR),
+        ]
+
+    FO_DELETE = 3
+    # ALLOWUNDO (Recycle Bin) | NOCONFIRMATION | SILENT | NOERRORUI, plus WANTNUKEWARNING
+    # so Windows still warns if it would have to delete permanently (e.g. too big for the bin)
+    flags = 0x0040 | 0x0010 | 0x0004 | 0x0400 | 0x4000
+    op = SHFILEOPSTRUCTW(wFunc=FO_DELETE, pFrom=str(path.resolve()) + "\0", fFlags=flags)
+    result = ctypes.windll.shell32.SHFileOperationW(ctypes.byref(op))
+    return result == 0 and not op.fAnyOperationsAborted and not path.exists()
+
 def delete_entry(path: Path) -> str:
+    """Recycle on Windows; elsewhere delete permanently."""
     try:
+        if IS_WINDOWS:
+            if _recycle(path):
+                return f"Moved to Recycle Bin: '{path.name}'"
+            return f"Error: could not move '{path.name}' to the Recycle Bin"
         if path.is_dir():
             shutil.rmtree(str(path))
         else:
@@ -231,16 +266,32 @@ def delete_entry(path: Path) -> str:
     except Exception as e:
         return f"Error: {e}"
 
+def _unused_target(dest_dir: Path, src: Path) -> Path:
+    """dest_dir/name, or name_copy, name_copy2, ... if that is already taken."""
+    target = dest_dir / src.name
+    n = 1
+    while target.exists():
+        suffix = "_copy" if n == 1 else f"_copy{n}"
+        target = dest_dir / f"{src.stem}{suffix}{src.suffix}"
+        n += 1
+    return target
+
 def paste_entry(src: Path, dest_dir: Path) -> str:
     try:
-        target = dest_dir / src.name
-        if target.exists():
-            target = dest_dir / f"{src.stem}_copy{src.suffix}"
+        target = _unused_target(dest_dir, src)
         if src.is_dir():
             shutil.copytree(str(src), str(target))
         else:
             shutil.copy2(str(src), str(target))
         return f"Pasted: '{target.name}'"
+    except Exception as e:
+        return f"Error: {e}"
+
+def move_entry(src: Path, dest_dir: Path) -> str:
+    try:
+        target = _unused_target(dest_dir, src)
+        shutil.move(str(src), str(target))
+        return f"Moved: '{target.name}'"
     except Exception as e:
         return f"Error: {e}"
 
@@ -253,7 +304,7 @@ LOGO = f"""{CYAN}{BOLD}
 
 HELP = (
     f"{GRAY}  [1-5] open  │  [←][→] pages  │  [↑] go up  │  "
-    f"[@] snippets  │  [Tab] autocomplete  │  [:help] commands{RESET}"
+    f"[@] snippets  │  [Tab] autocomplete  │  [:help] commands  │  [Esc] quit{RESET}"
 )
 
 def icon(is_dir: bool, name: str) -> str:
@@ -347,7 +398,7 @@ def show_help(getch_fn):
         (":create file/folder [name]",   "Create without opening"),
         (":createop file/folder [name]", "Create then open/enter immediately"),
         (":duplicate [1-5] [new name]",  "Duplicate a file or folder"),
-        (":delete [1-5]",                "Delete a file or folder"),
+        (":delete [1-5]",                "Move to Recycle Bin (asks y/N first)"),
         (":copy [1-5]",                  "Copy to clipboard"),
         (":cut [1-5]",                   "Cut — use :paste to move"),
         (":paste",                       "Paste clipboard into current folder"),
@@ -406,6 +457,8 @@ def main():
     status       = ""
     clipboard    = None   # Path for :copy
     cut_clip     = None   # Path for :cut
+    pending_del  = None   # Path waiting for y/N after :delete
+    query_base   = current_path  # folder typed relative paths start from
     needs_render = True
 
     # Write initial path for 'ql'
@@ -422,6 +475,17 @@ def main():
             needs_render = False
 
         ch = getch()
+
+        # ── Delete confirmation (any key other than y cancels, including Esc) ─
+        if pending_del is not None:
+            if ch in ('y', 'Y'):
+                status = delete_entry(pending_del)
+                entries = list_entries(current_path)
+            else:
+                status = "Delete cancelled"
+            pending_del = None
+            needs_render = True
+            continue
 
         # ── Quit ────────────────────────────────────────────────────────────
         if ch == '\x1b':
@@ -477,8 +541,8 @@ def main():
             needs_render = True
             continue
 
-        # ── Number selection ─────────────────────────────────────────────────
-        if ch.isdigit() and ch != '0' and not query.startswith(':'):
+        # ── Number selection (only before typing, so paths like 2026_I4 can be typed) ─
+        if ch.isdigit() and ch != '0' and not query:
             idx = int(ch) - 1
             visible = entries[page * PAGE_SIZE : page * PAGE_SIZE + PAGE_SIZE]
             if idx < len(visible):
@@ -504,7 +568,7 @@ def main():
             if query:
                 query = query[:-1]
                 if not query.startswith(':'):
-                    resolved = resolve_input(query, config)
+                    resolved = resolve_input(query, config, query_base)
                     if resolved and resolved.is_dir():
                         current_path = resolved
                         entries = list_entries(current_path)
@@ -636,8 +700,9 @@ def main():
                     visible = entries[page * PAGE_SIZE : page * PAGE_SIZE + PAGE_SIZE]
                     if 0 <= idx < len(visible):
                         _, path, _ = visible[idx]
-                        status = delete_entry(path)
-                        entries = list_entries(current_path)
+                        pending_del = path
+                        where = "move it to the Recycle Bin" if IS_WINDOWS else "delete it permanently"
+                        status = f"Delete '{path.name}'? Press y to {where}, any other key to cancel"
                     else:
                         status = "Error: invalid index"
                 else:
@@ -687,9 +752,8 @@ def main():
             # :paste
             if q == ':paste':
                 if cut_clip:
-                    status = paste_entry(cut_clip, current_path)
+                    status = move_entry(cut_clip, current_path)
                     if not status.startswith("Error"):
-                        delete_entry(cut_clip)
                         cut_clip = None
                     entries = list_entries(current_path)
                 elif clipboard:
@@ -733,7 +797,7 @@ def main():
                     status = f"Opened folder: {target.name}"
                     sync_path(current_path)
                 else:
-                    resolved = resolve_input(query, config)
+                    resolved = resolve_input(query, config, query_base)
                     if resolved:
                         if resolved.is_dir():
                             current_path = resolved
@@ -756,11 +820,15 @@ def main():
 
         # ── Printable character ───────────────────────────────────────────────
         if ch.isprintable() and len(ch) == 1:
+            if not query:
+                query_base = current_path
             query += ch
             if not query.startswith(':'):
                 snippets = config.get("snippets", {})
-                if query.lower() in snippets:
-                    target = Path(snippets[query.lower()])
+                key = query.lower()
+                # Jump as soon as the name is complete, unless a longer snippet starts the same way
+                if key in snippets and not any(k != key and k.startswith(key) for k in snippets):
+                    target = Path(snippets[key])
                     current_path = target
                     entries = list_entries(current_path)
                     page = 0
@@ -768,7 +836,7 @@ def main():
                     status = f"Opened folder: {target.name}"
                     sync_path(current_path)
                 else:
-                    resolved = resolve_input(query, config)
+                    resolved = resolve_input(query, config, query_base)
                     if resolved and resolved.is_dir():
                         current_path = resolved
                         entries = list_entries(current_path)

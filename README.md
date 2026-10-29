@@ -24,7 +24,7 @@ A keyboard-driven file launcher for Windows. No mouse, no typing Japanese folder
 
 | Key | Action |
 |-----|--------|
-| `1` – `5` | Open that file or enter that folder |
+| `1` – `5` | Open that file or enter that folder (when nothing is typed yet) |
 | `→` / `←` | Next / previous page (5 items per page) |
 | `↑` | Go up to the parent folder |
 | `@` | Open the Snippet Manager |
@@ -38,9 +38,15 @@ Letters you type always go into the input box, so keys like `q` or `a` don't do 
 
 ### Typing paths and snippets
 
-- **Full paths** navigate live as you type, e.g. `C:\Users\you\Documents`. Typing a file's full path and pressing `Enter` opens the file.
+QuickLaunch navigates live as you type. Press `Enter` to finish, then the number keys select again.
+
+- **Names in the current folder:** type a folder's name, e.g. `Denshi_I4`. Relative names are looked up from the folder you were in when you started typing.
+- **Full paths:** e.g. `C:\Users\you\Documents`. Typing a file's path and pressing `Enter` opens the file.
 - **Snippets** jump the moment you finish typing the name — no `Enter` needed. Type `notes` and you're in your Notes folder.
-- **Snippet + subfolder:** type the start of the snippet, press `Tab`, then continue with `/subfolder`, e.g. `sch` → `Tab` → `/2026_I4`. (Typing the full snippet name jumps straight away, so use `Tab` when you want to keep going.)
+  - If another snippet starts with the same letters (e.g. `pro` and `projects`), the shorter one waits for `Enter` so you can keep typing the longer one.
+- **Snippet + subfolder:** keep typing after the snippet with a `/`, e.g. `school/2026_I4`. A leading `/` always means "inside the folder you're in".
+- **Digits:** with nothing typed, `1`–`5` select an item. Digits later in a name (`i4`, `school/2026_I4`) are typed normally. For a name that *starts* with a digit, type a `/` first: `/2026_I4`.
+- `Tab` completes a partly typed snippet name, e.g. `sch` → `school`.
 
 ---
 
@@ -56,10 +62,10 @@ Type these and press `Enter`. `[1-5]` means the item number shown on the current
 | `:create file/folder [name]` | Create a file or folder without opening it |
 | `:createop file/folder [name]` | Create, then open the file / enter the folder |
 | `:duplicate [1-5] [new name]` | Make a copy next to the original |
-| `:delete [1-5]` | **Permanently** delete a file or folder — no confirmation, not sent to the Recycle Bin |
+| `:delete [1-5]` | Move a file or folder to the Recycle Bin — asks first; press `y` to confirm, any other key cancels |
 | `:copy [1-5]` | Copy an item to QuickLaunch's clipboard |
 | `:cut [1-5]` | Mark an item to move — then navigate and `:paste` |
-| `:paste` | Paste the copied/cut item into the current folder (adds `_copy` if the name is taken) |
+| `:paste` | Paste the copied item, or move the cut item, into the current folder (never overwrites: adds `_copy`, `_copy2`, … if the name is taken) |
 | `:snippet [name]` | Save the current folder as a snippet |
 | `:help` | Show the command guide |
 
@@ -174,4 +180,4 @@ You want to open a file deep inside a Japanese-named folder:
 
 - Folders always appear **before** files in the list
 - Use `→` / `←` to page through folders with many items
-- `:delete` cannot be undone — double-check the number first
+- Deleted something by mistake? Restore it from the Recycle Bin. (If an item is too big for the Recycle Bin, Windows warns you before deleting it permanently.)
