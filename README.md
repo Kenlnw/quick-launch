@@ -1,4 +1,4 @@
-# ⚡ QuickLaunch — File Navigator
+# QuickLaunch — File Navigator
 
 A keyboard-driven file launcher for Windows. No mouse, no typing Japanese folder names — just index numbers and short snippets.
 
